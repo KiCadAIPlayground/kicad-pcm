@@ -1,0 +1,85 @@
+# Packages published at https://pcm.gedicke.dev/repository.json
+# To bump: change `sha` (40 chars, a commit on the fork) and `version`, open a PR.
+repository:
+  name: KiCadAIPlayground PCM
+  base_url: https://pcm.gedicke.dev
+  maintainer: {name: KiCadAIPlayground, web: "https://github.com/KiCadAIPlayground"}
+
+# Fields: id (suffix of dev.gedicke.<id>), name, description, description_full (optional),
+# license (must be in the PCM v1 license enum), author, repo (org fork), sha, type,
+# path (dir inside the repo that becomes plugins/; "." = repo root), exclude (top-level
+# names to skip), icon (64x64 png inside the repo, optional), kicad_version (min),
+# kicad_version_max (optional), runtime (swig|ipc), version (major[.minor[.patch]]), tags.
+packages:
+  - id: autoled
+    name: AutoLED
+    description: Place WS2812 / SMD LEDs as a 2D grid inside a shape from an image, with schematic and PCB export.
+    license: MIT
+    author: black-ghost-off
+    repo: KiCadAIPlayground/AutoLED_kicad_plugin
+    sha: 6ce95798efdb7550674b18689b46040ff7a36823  # pinned in nixos-config-kicad
+    type: plugin
+    path: auto_led
+    icon: pcm/icon.png
+    kicad_version: "7.0"
+    kicad_version_max: "10.99"
+    runtime: swig
+    version: 1.0.4
+    tags: [led, ws2812, placement]
+
+  - id: pinout-generator
+    name: Pinout Generator
+    description: Generates component pinouts from the PCB to Markdown, CSV, C, Rust, Python and more.
+    license: MIT
+    author: Charles Grassin
+    repo: KiCadAIPlayground/kicad-pinout-generator
+    sha: 0a58bf540739752115bb05d616a72dfb37a4f171  # pinned in nixos-config-kicad
+    type: plugin
+    path: .
+    exclude: [resources, README.md, LICENSE, dialog.fbp]
+    icon: resources/icon.png
+    kicad_version: "10.0"   # upstream metadata says 10.0
+    runtime: swig
+    version: "1.3"
+    tags: [pinout, export]
+
+  - id: rf-tools
+    name: RF Tools
+    description: Footprint wizards, round tracks, mask expander, via fencing, taper and track length tools.
+    license: GPL-3.0
+    author: easyw
+    repo: KiCadAIPlayground/RF-tools-KiCAD
+    sha: c93bccee011ccf776a3dee012be2b66843390ade  # pinned in nixos-config-kicad
+    type: plugin
+    path: .
+    exclude: [resources, README.md, LICENSE]  # top-level resources/ is 7 MB of docs media, unused by code
+    icon: resources/icon.png
+    kicad_version: "6.0"
+    kicad_version_max: "9.99"   # upstream README: compatible up to 8.0.x; kept below 10 until tested
+    runtime: swig
+    version: "1.0.0"            # upstream has no tags; bump when the fork gets one
+    tags: [rf, microwave, via-fencing]
+
+  - id: localize-dependencies
+    name: Localize Dependencies
+    description: Copy a project's external symbols, footprints and 3D models into local libraries so it opens anywhere.
+    license: GPL-3.0
+    author: jOaSbA
+    repo: KiCadAIPlayground/localize-dependencies
+    sha: ae7e8cb98a3e31db06982f0c40214500f24498ee  # HEAD on 2026-11-24 (nixos-config has none)
+    type: plugin
+    path: plugins
+    icon: resources/icon.png
+    kicad_version: "10.0"
+    runtime: ipc
+    version: "1.0.3"            # latest upstream release; HEAD may be ahead of it
+    tags: [libraries, portable]
+
+# --- Not enabled yet ---
+# coil-creator:        license is AGPL-3.0 (LICENSE file) but upstream metadata claims GPL-3.0, and AGPL is not in the PCM v1 license enum. TODO: decide on the license string. Pin 587a4e82bb05d7edc7d3b279cd3822edba3e148d, path plugins, icon resources/icon.png, 2.1.3.
+# project-instances:   needs the sexpdata submodule (nested git:// submodule, not in the tarball). TODO: vendor sexpdata at 0bfd8b77a9b7324499838d45bf027c45e3660ee5 in build.py. Pin ae1712b97195651a26611cd7b205fcd8d2d77f14, path src.
+# hqsearch:            Huaqiu commercial service plugin; fine for a third-party repo, but not verified. Pin 743fa7ed2d5a38c8f3b44b20d5b9978afa4bc0b1.
+# import-lib, kipi:    IPC plugins, layout and requirements not checked. TODO.
+# kicad-git:           needs a system git; layout not checked. TODO.
+# KiCadRoutingTools, KiKit: need compiled/Rust parts and CLI deps; PCM package design TODO.
+# kicad_templates:     project templates, not a PCM plugin type (v1 has plugin|library|colortheme only). TODO.
