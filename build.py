@@ -9,7 +9,17 @@ ROOT = Path(__file__).resolve().parent
 DIST, CACHE = ROOT / "dist", ROOT / ".cache"
 SCHEMA_URL = "https://go.kicad.org/pcm/schemas/v1"
 ID_PREFIX = "dev.gedicke."
+OFFICIAL_REPO = "https://repository.kicad.org/repository.json"
+MIRROR_FIELDS = ("name", "description", "description_full", "identifier", "type", "author", "maintainer",
+                 "license", "resources", "tags")
+MIRROR_VERSION_FIELDS = ("version", "status", "kicad_version", "kicad_version_max", "platforms", "runtime",
+                         "download_size")
 ZIP_TIME = (2026, 1, 1, 0, 0, 0)  # fixed so identical input gives an identical zip
+
+
+_opener = urllib.request.build_opener()
+_opener.addheaders = [("User-Agent", "kicad-pcm-build/1.0")]  # gitlab/kicad.org 403 the default urllib UA
+urllib.request.install_opener(_opener)
 
 
 def sha256(b: bytes) -> str:
@@ -25,6 +35,58 @@ def fetch_tarball(repo: str, sha: str) -> bytes:
         with urllib.request.urlopen(f"https://codeload.github.com/{repo}/tar.gz/{sha}", timeout=120) as r:
             f.write_bytes(r.read())
     return f.read_bytes()
+
+
+def download(url: str, want: str) -> bytes:
+    """Fetch url (cached by expected sha256) and fail the build unless it hashes to `want`."""
+    f = CACHE / want
+    if not f.exists():
+        CACHE.mkdir(exist_ok=True)
+        with urllib.request.urlopen(url, timeout=300) as r:
+            f.write_bytes(r.read())
+    blob = f.read_bytes()
+    if sha256(blob) != want:
+        f.unlink()
+        sys.exit(f"{url}: sha256 mismatch (got {sha256(blob)}, pinned {want})")
+    return blob
+
+
+_official: list = []
+
+
+def official_packages() -> list:
+    """Official KiCad PCM package list, verified against the sha256 in its repository.json."""
+    if not _official:
+        with urllib.request.urlopen(OFFICIAL_REPO, timeout=60) as r:
+            pk = json.load(r)["packages"]
+        with urllib.request.urlopen(pk["url"], timeout=120) as r:
+            blob = r.read()
+        if sha256(blob) != pk["sha256"]:
+            sys.exit("official packages.json does not match the sha256 in its repository.json")
+        _official.extend(json.loads(blob)["packages"])
+    return _official
+
+
+def mirror(pkg: dict) -> tuple[dict, bytes, dict[str, bytes]]:
+    """Return (metadata, zip bytes, {name: bytes} of the zip's files) for a pinned upstream PCM zip."""
+    blob = download(pkg["url"], pkg["sha256"])
+    if "metadata_url" in pkg:  # e.g. a GitHub release metadata.json; may list many versions
+        docs = [json.loads(download(pkg["metadata_url"], pkg["metadata_sha256"]))]
+    else:
+        docs = official_packages()
+    ver = str(pkg["version"])
+    for d in docs:
+        if d["identifier"] == pkg["identifier"]:
+            up = next((v for v in d["versions"] if v["version"] == ver), None)
+            if up:
+                break
+    else:
+        sys.exit(f"{pkg['identifier']} {ver}: not found in upstream metadata")
+    meta = {"$schema": SCHEMA_URL, **{k: d[k] for k in MIRROR_FIELDS if k in d}}
+    meta["versions"] = [{k: up[k] for k in MIRROR_VERSION_FIELDS if k in up}]
+    z = zipfile.ZipFile(io.BytesIO(blob))
+    files = {i.filename: z.read(i) for i in z.infolist() if not i.is_dir()}
+    return meta, blob, files
 
 
 def collect(pkg: dict) -> dict[str, bytes]:
@@ -101,17 +163,23 @@ def build() -> None:
     for old in DIST.glob("packages/*.zip"):
         old.unlink()
     now, packages, icons = int(time.time()), [], io.BytesIO()
-    ids = [p["id"] for p in man["packages"]]
+    ids = [p.get("id") or p["identifier"] for p in man["packages"]]
     assert len(ids) == len(set(ids)), "duplicate package id in manifest.yaml"
     with zipfile.ZipFile(icons, "w", zipfile.ZIP_DEFLATED) as rz:
         for pkg in man["packages"]:
-            files, meta = collect(pkg), metadata(pkg)
-            blob = write_zip(files, meta)
+            if pkg.get("kind") == "mirror":
+                meta, blob, files = mirror(pkg)
+                files.pop("metadata.json", None)
+                if "resources/icon.png" not in files:
+                    print(f"WARNING: {pkg['identifier']}: upstream zip has no resources/icon.png")
+            else:
+                files, meta = collect(pkg), metadata(pkg)
+                blob = write_zip(files, meta)
             fname = f"{meta['identifier']}-{pkg['version']}.zip"
             (DIST / "packages" / fname).write_bytes(blob)
             v = meta["versions"][0]
-            v.update(download_url=f"{base}/packages/{fname}", download_sha256=sha256(blob),
-                     download_size=len(blob), install_size=sum(len(d) for d in files.values()))
+            v.update(download_url=f"{base}/packages/{fname}", download_sha256=sha256(blob), download_size=len(blob))
+            v["install_size"] = sum(len(d) for d in files.values())  # upstream values are often off (some count metadata.json)
             packages.append(meta)
             if "resources/icon.png" in files:
                 rz.writestr(zipfile.ZipInfo(f"{meta['identifier']}/icon.png", ZIP_TIME), files["resources/icon.png"])
